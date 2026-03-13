@@ -1,0 +1,24 @@
+{
+  "name": "pr-review-automation",
+  "version": "1.0.0",
+  "description": "Automação de revisão de PR baseada em tarefas do Azure DevOps",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@octokit/rest": "^21.0.0",
+    "openai": "^4.60.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.5.0",
+    "@types/node": "^22.5.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
