@@ -1,2 +1,0 @@
-# repo-automacoes
-repo-automacoes
