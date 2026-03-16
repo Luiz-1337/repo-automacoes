@@ -4,7 +4,7 @@ export type AzureWorkItem = {
     fields: Record<string, unknown>;
 };
 
-function getRequiredEnv(name: string): string {
+function required(name: string): string {
     const value = process.env[name];
     if (!value) {
         throw new Error(`Missing required environment variable: ${name}`);
@@ -13,9 +13,9 @@ function getRequiredEnv(name: string): string {
 }
 
 export async function getWorkItem(id: number): Promise<AzureWorkItem> {
-    const org = getRequiredEnv("AZDO_ORG");
-    const project = getRequiredEnv("AZDO_PROJECT");
-    const pat = getRequiredEnv("AZDO_PAT");
+    const org = required("AZDO_ORG");
+    const project = required("AZDO_PROJECT");
+    const pat = required("AZDO_PAT");
 
     const url =
         `https://dev.azure.com/${encodeURIComponent(org)}/` +
@@ -34,20 +34,14 @@ export async function getWorkItem(id: number): Promise<AzureWorkItem> {
 
     if (!response.ok) {
         const body = await response.text();
-        throw new Error(`Azure DevOps work item request failed (${response.status}): ${body}`);
+        throw new Error(`Azure DevOps request failed (${response.status}): ${body}`);
     }
 
     return (await response.json()) as AzureWorkItem;
 }
 
-export function getWorkItemField<T = string>(
-    workItem: AzureWorkItem,
-    fieldName: string,
-    fallback = ""
-): T | string {
+export function getField(workItem: AzureWorkItem, fieldName: string, fallback = ""): string {
     const value = workItem.fields?.[fieldName];
-    if (value === undefined || value === null) {
-        return fallback;
-    }
-    return value as T;
+    if (value === undefined || value === null) return fallback;
+    return String(value);
 }

@@ -6,10 +6,13 @@ export type PullRequestContext = {
     prNumber: number;
 };
 
-export type PullRequestData = {
-    pr: Awaited<ReturnType<Octokit["pulls"]["get"]>>["data"];
-    commits: Awaited<ReturnType<Octokit["pulls"]["listCommits"]>>["data"];
-    files: Awaited<ReturnType<Octokit["pulls"]["listFiles"]>>["data"];
+export type FileSummary = {
+    filename: string;
+    status: string;
+    additions: number;
+    deletions: number;
+    changes: number;
+    patch?: string;
 };
 
 const BOT_MARKER = "<!-- pr-task-review-bot -->";
@@ -18,10 +21,28 @@ export function createGitHubClient(token: string): Octokit {
     return new Octokit({ auth: token });
 }
 
-export async function getPullRequestData(
-    octokit: Octokit,
-    ctx: PullRequestContext
-): Promise<PullRequestData> {
+export function parseRepository(fullRepository: string): { owner: string; repo: string } {
+    const [owner, repo] = fullRepository.split("/");
+    if (!owner || !repo) {
+        throw new Error(`Invalid repository format: ${fullRepository}`);
+    }
+    return { owner, repo };
+}
+
+export function extractAbIds(text: string): number[] {
+    const matches = [...text.matchAll(/\bAB#(\d+)\b/gi)];
+    return [...new Set(matches.map((m) => Number(m[1])))];
+}
+
+export function buildTextPool(input: {
+    prTitle?: string | null;
+    prBody?: string | null;
+    commitMessages: string[];
+}): string {
+    return [input.prTitle ?? "", input.prBody ?? "", ...input.commitMessages].join("\n");
+}
+
+export async function getPullRequestData(octokit: Octokit, ctx: PullRequestContext) {
     const pr = await octokit.pulls.get({
         owner: ctx.owner,
         repo: ctx.repo,
@@ -45,7 +66,14 @@ export async function getPullRequestData(
     return {
         pr: pr.data,
         commits,
-        files,
+        files: files.map((file) => ({
+            filename: file.filename,
+            status: file.status,
+            additions: file.additions ?? 0,
+            deletions: file.deletions ?? 0,
+            changes: file.changes ?? 0,
+            patch: file.patch,
+        })) as FileSummary[],
     };
 }
 
@@ -80,25 +108,4 @@ export async function upsertIssueComment(
         issue_number: ctx.prNumber,
         body: fullBody,
     });
-}
-
-export function parseRepository(fullRepository: string): { owner: string; repo: string } {
-    const [owner, repo] = fullRepository.split("/");
-    if (!owner || !repo) {
-        throw new Error(`Invalid GitHub repository format: ${fullRepository}`);
-    }
-    return { owner, repo };
-}
-
-export function extractAbIds(text: string): number[] {
-    const matches = [...text.matchAll(/\bAB#(\d+)\b/gi)];
-    return [...new Set(matches.map((m) => Number(m[1])))];
-}
-
-export function buildTextPool(input: {
-    prTitle?: string | null;
-    prBody?: string | null;
-    commitMessages: string[];
-}): string {
-    return [input.prTitle ?? "", input.prBody ?? "", ...input.commitMessages].join("\n");
 }

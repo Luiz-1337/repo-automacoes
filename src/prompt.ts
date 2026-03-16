@@ -1,111 +1,131 @@
 import type { AzureWorkItem } from "./azure.js";
-import { getWorkItemField } from "./azure.js";
+import type { FileSummary } from "./github.js";
+import { getField } from "./azure.js";
 
-type PromptInput = {
+function clean(text: string, maxLength: number): string {
+    const normalized = text.replace(/\r/g, "").trim();
+    if (!normalized) return "[vazio]";
+    if (normalized.length <= maxLength) return normalized;
+    return `${normalized.slice(0, maxLength)}\n...[truncado]`;
+}
+
+function detectArea(files: FileSummary[]): string {
+    const names = files.map((f) => f.filename.toLowerCase());
+
+    const hasFrontend = names.some((n) =>
+        [".tsx", ".ts", ".jsx", ".js", ".css", ".scss"].some((ext) => n.endsWith(ext))
+    );
+    const hasCSharp = names.some((n) => n.endsWith(".cs"));
+    const hasCpp = names.some((n) =>
+        [".cpp", ".cc", ".cxx", ".h", ".hpp"].some((ext) => n.endsWith(ext))
+    );
+    const hasInfra = names.some(
+        (n) =>
+            n.endsWith(".yml") ||
+            n.endsWith(".yaml") ||
+            n.includes("dockerfile") ||
+            n.startsWith(".github/")
+    );
+
+    const areas: string[] = [];
+    if (hasFrontend) areas.push("frontend");
+    if (hasCSharp) areas.push("backend C#");
+    if (hasCpp) areas.push("C++");
+    if (hasInfra) areas.push("infra");
+
+    if (areas.length === 0) return "não identificada";
+    if (areas.length === 1) return areas[0];
+    return "mista";
+}
+
+export function buildReviewPrompt(input: {
     workItem: AzureWorkItem;
     pr: {
         title: string;
         body?: string | null;
+        html_url: string;
         additions: number;
         deletions: number;
         changed_files: number;
-        html_url: string;
     };
-    commits: Array<{
-        sha: string;
-        message: string;
-    }>;
-    files: Array<{
-        filename: string;
-        status: string;
-        additions?: number;
-        deletions?: number;
-        changes?: number;
-        patch?: string;
-    }>;
-};
+    commits: Array<{ sha: string; message: string }>;
+    files: FileSummary[];
+}): string {
+    const taskTitle = getField(input.workItem, "System.Title");
+    const taskDescription = getField(input.workItem, "System.Description");
+    const acceptance = getField(input.workItem, "Microsoft.VSTS.Common.AcceptanceCriteria");
+    const taskType = getField(input.workItem, "System.WorkItemType");
+    const taskState = getField(input.workItem, "System.State");
+    const area = detectArea(input.files);
 
-function sanitize(text: string, maxLength: number): string {
-    const normalized = text.replace(/\r/g, "").trim();
-    if (normalized.length <= maxLength) {
-        return normalized;
-    }
-    return `${normalized.slice(0, maxLength)}\n...[truncado]`;
-}
+    const commitSection =
+        input.commits.map((c) => `- ${c.sha.slice(0, 8)} ${c.message}`).join("\n") || "[sem commits]";
 
-export function buildReviewPrompt(input: PromptInput): string {
-    const title = String(getWorkItemField(input.workItem, "System.Title", ""));
-    const description = String(getWorkItemField(input.workItem, "System.Description", ""));
-    const acceptance = String(
-        getWorkItemField(input.workItem, "Microsoft.VSTS.Common.AcceptanceCriteria", "")
-    );
-    const workItemType = String(getWorkItemField(input.workItem, "System.WorkItemType", ""));
-    const state = String(getWorkItemField(input.workItem, "System.State", ""));
-
-    const commitSection = input.commits
-        .map((commit) => `- ${commit.sha.slice(0, 8)} ${commit.message}`)
-        .join("\n");
-
-    const filesSection = input.files
-        .slice(0, 50)
-        .map((file) => {
-            const patch = file.patch ? sanitize(file.patch, 5000) : "[sem patch disponível]";
-            return [
-                `ARQUIVO: ${file.filename}`,
-                `STATUS: ${file.status}`,
-                `MUDANÇAS: +${file.additions ?? 0} / -${file.deletions ?? 0}`,
-                "PATCH:",
-                patch,
-            ].join("\n");
-        })
-        .join("\n\n");
+    const fileSection =
+        input.files
+            .slice(0, 40)
+            .map((f) => {
+                const patch = clean(f.patch ?? "[sem patch disponível]", 4500);
+                return [
+                    `ARQUIVO: ${f.filename}`,
+                    `STATUS: ${f.status}`,
+                    `MUDANÇAS: +${f.additions} / -${f.deletions}`,
+                    `PATCH:`,
+                    patch,
+                ].join("\n");
+            })
+            .join("\n\n") || "[sem arquivos]";
 
     return `
-Você é um revisor técnico de Pull Request.
+Você é um revisor técnico de pull requests em um ambiente corporativo.
 
-Objetivo:
-avaliar se o PR parece coerente com a task do Azure DevOps e apontar lacunas, riscos e possíveis itens faltantes.
+Sua tarefa é comparar a task do Azure DevOps com o PR do GitHub e avaliar se a implementação parece coerente, suficiente e segura.
 
 Regras:
 - Responda em português do Brasil.
-- Seja objetivo.
+- Seja objetivo e crítico.
 - Não elogie sem necessidade.
 - Se houver incerteza, diga explicitamente.
 - Não invente comportamento que não esteja visível na task ou no diff.
+- Considere impacto em backend, frontend, contrato, testes e integração.
+- Dê atenção a riscos de implementação parcial.
+- Ao final, escolha exatamente um veredito: PASSA, ALERTA ou FALHA.
 
-TASK DO AZURE DEVOPS
+CONTEXTO DA TASK (Azure DevOps)
 - ID: ${input.workItem.id}
-- Tipo: ${workItemType}
-- Estado: ${state}
-- Título: ${title}
+- Tipo: ${taskType}
+- Estado: ${taskState}
+- Título: ${taskTitle}
 
 DESCRIÇÃO DA TASK
-${sanitize(description, 12000)}
+${clean(taskDescription, 12000)}
 
 CRITÉRIOS DE ACEITE
-${sanitize(acceptance, 8000)}
+${clean(acceptance, 10000)}
 
-PULL REQUEST
-- Título: ${input.pr.title}
+CONTEXTO DO PR
 - URL: ${input.pr.html_url}
+- Título: ${input.pr.title}
+- Área provável impactada: ${area}
 - Arquivos alterados: ${input.pr.changed_files}
 - Linhas adicionadas: ${input.pr.additions}
 - Linhas removidas: ${input.pr.deletions}
 
 DESCRIÇÃO DO PR
-${sanitize(input.pr.body ?? "", 8000)}
+${clean(input.pr.body ?? "", 6000)}
 
 COMMITS
-${commitSection || "[sem commits]"}
+${commitSection}
 
 ARQUIVOS E PATCHES
-${filesSection || "[sem arquivos]"}
+${fileSection}
 
-Quero a resposta no formato abaixo:
+Formato obrigatório da resposta:
 
 ## Resumo
 - alinhamento com a task: alto | médio | baixo
 - cobertura aparente: completa | parcial | inconsistente
+- risco geral: baixo | médio | alto
 
 ## O que faz sentido
 - bullets curtos

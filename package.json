@@ -1,22 +1,22 @@
 {
   "name": "pr-review-automation",
   "version": "1.0.0",
-  "description": "Automação de revisão de PR baseada em tarefas do Azure DevOps",
+  "description": "Automação de revisão de PR com GitHub + Azure DevOps + OpenAI",
   "type": "module",
   "private": true,
   "scripts": {
     "start": "tsx src/index.ts",
-    "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@octokit/rest": "^21.0.0",
-    "openai": "^4.60.0"
+    "@octokit/rest": "^21.1.1",
+    "dotenv": "^16.4.7",
+    "openai": "^4.103.0"
   },
   "devDependencies": {
-    "tsx": "^4.7.0",
-    "typescript": "^5.5.0",
-    "@types/node": "^22.5.0"
+    "@types/node": "^22.14.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
   },
   "engines": {
     "node": ">=20"

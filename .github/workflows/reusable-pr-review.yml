@@ -3,10 +3,10 @@ name: Reusable PR Review
 on:
   workflow_call:
     inputs:
-      repository:
+      target_repository:
         required: true
         type: string
-      pr_number:
+      target_pr_number:
         required: true
         type: string
     secrets:
@@ -44,11 +44,11 @@ jobs:
       - name: Run PR review
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ inputs.repository }}
-          PR_NUMBER: ${{ inputs.pr_number }}
+          TARGET_GITHUB_REPOSITORY: ${{ inputs.target_repository }}
+          TARGET_PR_NUMBER: ${{ inputs.target_pr_number }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: gpt-5.2
           AZDO_ORG: ${{ secrets.AZDO_ORG }}
           AZDO_PROJECT: ${{ secrets.AZDO_PROJECT }}
           AZDO_PAT: ${{ secrets.AZDO_PAT }}
-        run: npx tsx src/index.ts
+        run: npm run start
