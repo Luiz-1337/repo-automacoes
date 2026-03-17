@@ -31,17 +31,22 @@ jobs:
     steps:
       - name: Checkout automation repository
         uses: actions/checkout@v4
+        with:
+          repository: Luiz-1337/repo-automacoes
+          ref: main
+          path: repo-automacoes
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
       - name: Install dependencies
+        working-directory: repo-automacoes
         run: npm ci
 
       - name: Run PR review
+        working-directory: repo-automacoes
         env:
           TOKEN_GITHUB: ${{ github.token }}
           TARGET_GITHUB_REPOSITORY: ${{ inputs.target_repository }}
