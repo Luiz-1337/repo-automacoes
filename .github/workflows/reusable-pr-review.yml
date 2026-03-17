@@ -43,7 +43,7 @@ jobs:
 
       - name: Run PR review
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          TOKEN_GITHUB: ${{ github.token }}
           TARGET_GITHUB_REPOSITORY: ${{ inputs.target_repository }}
           TARGET_PR_NUMBER: ${{ inputs.target_pr_number }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

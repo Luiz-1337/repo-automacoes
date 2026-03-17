@@ -1,11 +1,17 @@
 import { Octokit } from "@octokit/rest";
 
+/**
+ * Identifies a pull request within a repository.
+ */
 export type PullRequestContext = {
     owner: string;
     repo: string;
     prNumber: number;
 };
 
+/**
+ * Normalized subset of changed file metadata returned by GitHub.
+ */
 export type FileSummary = {
     filename: string;
     status: string;
@@ -17,10 +23,16 @@ export type FileSummary = {
 
 const BOT_MARKER = "<!-- pr-task-review-bot -->";
 
+/**
+ * Creates an authenticated GitHub API client.
+ */
 export function createGitHubClient(token: string): Octokit {
     return new Octokit({ auth: token });
 }
 
+/**
+ * Parses `owner/repo` format and validates both parts.
+ */
 export function parseRepository(fullRepository: string): { owner: string; repo: string } {
     const [owner, repo] = fullRepository.split("/");
     if (!owner || !repo) {
@@ -29,11 +41,17 @@ export function parseRepository(fullRepository: string): { owner: string; repo: 
     return { owner, repo };
 }
 
+/**
+ * Extracts unique AB# identifiers from arbitrary text content.
+ */
 export function extractAbIds(text: string): number[] {
     const matches = [...text.matchAll(/\bAB#(\d+)\b/gi)];
     return [...new Set(matches.map((m) => Number(m[1])))];
 }
 
+/**
+ * Aggregates textual PR context used for AB# detection.
+ */
 export function buildTextPool(input: {
     prTitle?: string | null;
     prBody?: string | null;
@@ -42,6 +60,9 @@ export function buildTextPool(input: {
     return [input.prTitle ?? "", input.prBody ?? "", ...input.commitMessages].join("\n");
 }
 
+/**
+ * Loads PR metadata, commits, and changed files from GitHub.
+ */
 export async function getPullRequestData(octokit: Octokit, ctx: PullRequestContext) {
     const pr = await octokit.pulls.get({
         owner: ctx.owner,
@@ -77,6 +98,9 @@ export async function getPullRequestData(octokit: Octokit, ctx: PullRequestConte
     };
 }
 
+/**
+ * Creates or updates the bot's PR comment using a stable marker.
+ */
 export async function upsertIssueComment(
     octokit: Octokit,
     ctx: PullRequestContext,

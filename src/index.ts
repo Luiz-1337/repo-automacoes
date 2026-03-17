@@ -11,6 +11,9 @@ import {
 import { getWorkItem } from "./azure.js";
 import { buildReviewPrompt } from "./prompt.js";
 
+/**
+ * Reads a required environment variable and throws when missing.
+ */
 function required(name: string): string {
     const value = process.env[name];
     if (!value) {
@@ -19,21 +22,14 @@ function required(name: string): string {
     return value;
 }
 
-function buildNoTaskComment(): string {
-    return `
-## Revisão automática da task
-
-Não encontrei nenhum identificador \`AB#123\` no título, descrição ou commits deste PR.
-
-Inclua o ID da task do Azure DevOps no padrão \`AB#123\`.
-`.trim();
-}
-
+/**
+ * Builds the fallback PR comment body when the automation fails.
+ */
 function buildErrorComment(message: string): string {
     return `
-## Revisão automática da task
+## Automated task review
 
-A validação automática encontrou um erro:
+The automated validation found an error:
 
 \`\`\`
 ${message}
@@ -41,8 +37,11 @@ ${message}
 `.trim();
 }
 
+/**
+ * Coordinates PR data collection, prompt generation, model call, and PR comment upsert.
+ */
 async function main(): Promise<void> {
-    const githubToken = required("GITHUB_TOKEN");
+    const githubToken = required("TOKEN_GITHUB");
     const repository = required("TARGET_GITHUB_REPOSITORY");
     const prNumber = Number(required("TARGET_PR_NUMBER"));
     const openAiApiKey = required("OPENAI_API_KEY");
@@ -52,17 +51,11 @@ async function main(): Promise<void> {
         throw new Error(`Invalid TARGET_PR_NUMBER: ${process.env.TARGET_PR_NUMBER}`);
     }
 
-    console.log("Iniciando revisão automática...");
-    console.log(`Repo alvo: ${repository}`);
-    console.log(`PR alvo: ${prNumber}`);
-
     const { owner, repo } = parseRepository(repository);
     const ctx = { owner, repo, prNumber };
 
     const octokit = createGitHubClient(githubToken);
     const prData = await getPullRequestData(octokit, ctx);
-
-    console.log(`PR carregado: ${prData.pr.title}`);
 
     const textPool = buildTextPool({
         prTitle: prData.pr.title,
@@ -71,17 +64,15 @@ async function main(): Promise<void> {
     });
 
     const abIds = extractAbIds(textPool);
-    console.log(`AB IDs encontrados: ${abIds.length ? abIds.join(", ") : "nenhum"}`);
 
-    if (abIds.length === 0) {
-        await upsertIssueComment(octokit, ctx, buildNoTaskComment());
-        console.log("Comentário de ausência de AB# publicado.");
-        return;
+    const hasWorkItem = abIds.length > 0;
+    let workItemId: number | undefined;
+
+    let workItem: Awaited<ReturnType<typeof getWorkItem>> | undefined;
+    if (hasWorkItem) {
+        workItemId = abIds[0];
+        workItem = await getWorkItem(workItemId);
     }
-
-    const workItemId = abIds[0];
-    console.log(`Consultando Azure DevOps para AB#${workItemId}...`);
-    const workItem = await getWorkItem(workItemId);
 
     const prompt = buildReviewPrompt({
         workItem,
@@ -100,7 +91,6 @@ async function main(): Promise<void> {
         files: prData.files,
     });
 
-    console.log("Chamando OpenAI...");
     const client = new OpenAI({ apiKey: openAiApiKey });
 
     const response = await client.responses.create({
@@ -108,24 +98,27 @@ async function main(): Promise<void> {
         input: prompt,
     });
 
-    const reviewText = response.output_text?.trim() || "Não foi possível gerar análise textual.";
+    const reviewText = response.output_text?.trim() || "Unable to generate textual analysis.";
+
+    const header = hasWorkItem
+        ? `Task found: \`AB#${workItemId}\``
+        : "No AB# was provided in the PR. Review was performed without Azure DevOps task validation.";
 
     const commentBody = `
-## Revisão automática da task
+## Automated task review
 
-Task encontrada: \`AB#${workItemId}\`
+${header}
 
 ${reviewText}
 `.trim();
 
     await upsertIssueComment(octokit, ctx, commentBody);
-    console.log("Comentário de revisão publicado/atualizado com sucesso.");
 }
 
 main().catch(async (error) => {
     console.error(error);
 
-    const githubToken = process.env.GITHUB_TOKEN;
+    const githubToken = process.env.TOKEN_GITHUB;
     const repository = process.env.TARGET_GITHUB_REPOSITORY;
     const prNumberRaw = process.env.TARGET_PR_NUMBER;
 
